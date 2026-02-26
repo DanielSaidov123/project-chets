@@ -1,4 +1,6 @@
 import User from "../models/user.model.js";
+import bcrypt from "bcryptjs";
+import generateTokenAndSetCookie from "../utils/generateToken.js";
 
 export const signupUser = async (req, res) => {
   try {
@@ -13,33 +15,71 @@ export const signupUser = async (req, res) => {
       return res.status(400).json({ error: "Username already exists" });
     }
 
-    const boyProfilePic = `https://ui-avatars.com/api/?name=${username}`;
-    
+    const salt = await bcrypt.genSalt(10);
+    const hashPassword = await bcrypt.hash(password, salt);
+
+    const boyProfilePic = `https://avatar.iran.liara.run/public/boy?username=${username}`;
+    const girlProfilePic = `https://avatar.iran.liara.run/public/girl?username=${username}`;
+
     const newUser = new User({
       fullName,
       username,
-      password,
+      password: hashPassword,
       gender,
-      profilePic : boyProfilePic,
+      profilePic: gender === "male" ? boyProfilePic : girlProfilePic,
     });
+    if (newUser) {
+      generateTokenAndSetCookie(newUser._id, res);
+      await newUser.save();
 
-    await newUser.save();
-
-    res.status(201).json({
-      _id: newUser._id,
-      fullName: newUser.fullName,
-      username: newUser.username,
-      boyProfilePic: newUser.profilePic,
-    });
+      res.status(201).json({
+        _id: newUser._id,
+        fullName: newUser.fullName,
+        username: newUser.username,
+        boyProfilePic: newUser.profilePic,
+      });
+    } else {
+      res.status(400).json({ error: "internal User data" });
+    }
   } catch (error) {
     console.log(error.message);
-    
-    res.status(500).json({error :"internal Server Error"})
+
+    res.status(500).json({ error: "internal Server Error" });
   }
 };
 
-export const loginUser = async (req, res) => {};
+export const loginUser = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    const user = await User.findOne({ username });
+    const isPasswordCorrect = await bcrypt.compare(
+      password,
+      user?.password || "",
+    );
+    if (!user || !isPasswordCorrect) {
+      return res.status(400).json({ error: "Invalid username or password" });
+    }
+
+    generateTokenAndSetCookie(user._id, res);
+    res.status(201).json({
+      _id: user._id,
+      fullName: user.fullName,
+      username: user.username,
+      boyProfilePic: user.profilePic,
+    });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ error: "internal Server Error" });
+  }
+};
 
 export const logoutUser = (req, res) => {
-  res.json("logoutUser");
+  try {
+    res.cookie("jwt", "", { maxAge: 0 });
+    res.status(200).json({ message: "Logged out successfully" });
+  } catch (error) {
+    console.log(error.message);
+    res.status(500).json({ error: "internal Server Error" });
+  }
 };
